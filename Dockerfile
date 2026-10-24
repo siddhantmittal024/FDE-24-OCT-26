@@ -1,20 +1,18 @@
-# L4b: this Dockerfile works, and the platform team would still refuse it.
-# Fix it (see ASSIGNMENT.md), then run: bash grade.sh l4
-#
-# TODO 1: base image from Docker Hub (anonymous pulls are rate-limited), full size, not pinned to a patch version.
-#         Use the pinned slim mirror on ECR Public: public.ecr.aws/docker/library/python:3.12.15-slim-bookworm
-# TODO 2: a key baked into the image: anyone with the image can read it in `docker history`. Remove it;
-#         pass secrets at run time instead (docker run -e ...).
-# TODO 3: `COPY . .` copies everything, including .env and .git. Copy only what the app needs,
-#         and add a .dockerignore.
-# TODO 4: it runs as root. Create a user and switch to it.
-# TODO 5: no health check. Add a HEALTHCHECK with --interval=5s --timeout=3s --start-period=5s that calls /healthz
-#         (slim images have no curl; use python).
+# L4b solution: pinned slim base, no secrets, only the app copied, non-root, health check.
+FROM public.ecr.aws/docker/library/python:3.12.15-slim-bookworm
 
-FROM python:3.12
-ENV SERVICE_API_KEY=demo-key-123
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
-COPY . .
-RUN pip install -r requirements.txt
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app ./app
+
+RUN useradd --create-home --uid 10001 appuser
+USER appuser
+
 EXPOSE 8000
+HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=3 \
+  CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
